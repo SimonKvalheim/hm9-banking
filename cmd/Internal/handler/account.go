@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/simonkvalheim/hm9-banking/internal/model"
-	"github.com/simonkvalheim/hm9-banking/internal/repository"
+	"github.com/simonkvalheim/hm9-banking/cmd/internal/model"
+	"github.com/simonkvalheim/hm9-banking/cmd/internal/repository"
 )
 
 // AccountHandler handles HTTP requests for accounts
