@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/simonkvalheim/hm9-banking/cmd/internal/model"
+	"github.com/simonkvalheim/hm9-banking/internal/model"
 )
 
 // AccountRepository handles database operations for accounts

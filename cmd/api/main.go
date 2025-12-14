@@ -14,8 +14,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/simonkvalheim/hm9-banking/cmd/internal/handler"
-	"github.com/simonkvalheim/hm9-banking/cmd/internal/repository"
+	"github.com/simonkvalheim/hm9-banking/internal/handler"
+	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
 
 func main() {
