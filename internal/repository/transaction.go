@@ -34,8 +34,8 @@ func (r *TransactionRepository) Create(ctx context.Context, tx model.Transaction
 
 	// Insert the transaction
 	query := `
-		INSERT INTO transactions (id, idempotency_key, type, status, reference, initiated_at, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO transactions (id, idempotency_key, type, status, reference, initiated_at, metadata, amount, currency, from_account_id, to_account_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	metadata := tx.Metadata
@@ -51,6 +51,10 @@ func (r *TransactionRepository) Create(ctx context.Context, tx model.Transaction
 		tx.Reference,
 		tx.InitiatedAt,
 		metadata,
+		tx.Amount,
+		tx.Currency,
+		tx.FromAccountID,
+		tx.ToAccountID,
 	)
 	if err != nil {
 		// Check for unique constraint violation on idempotency_key
@@ -87,13 +91,13 @@ func (r *TransactionRepository) Create(ctx context.Context, tx model.Transaction
 // GetByID retrieves a transaction by its ID
 func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error) {
 	query := `
-		SELECT id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata
+		SELECT id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata, amount, currency, from_account_id, to_account_id
 		FROM transactions
 		WHERE id = $1
 	`
 
 	tx := &model.Transaction{}
-	var reference, errorMessage *string
+	var reference, errorMessage, amount, currency *string
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&tx.ID,
 		&tx.IdempotencyKey,
@@ -105,6 +109,10 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 		&tx.CompletedAt,
 		&errorMessage,
 		&tx.Metadata,
+		&amount,
+		&currency,
+		&tx.FromAccountID,
+		&tx.ToAccountID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -119,6 +127,12 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 	if errorMessage != nil {
 		tx.ErrorMessage = *errorMessage
 	}
+	if amount != nil {
+		tx.Amount = *amount
+	}
+	if currency != nil {
+		tx.Currency = *currency
+	}
 
 	return tx, nil
 }
@@ -126,13 +140,13 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 // GetByIdempotencyKey retrieves a transaction by its idempotency key
 func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key string) (*model.Transaction, error) {
 	query := `
-		SELECT id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata
+		SELECT id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata, amount, currency, from_account_id, to_account_id
 		FROM transactions
 		WHERE idempotency_key = $1
 	`
 
 	tx := &model.Transaction{}
-	var reference, errorMessage *string
+	var reference, errorMessage, amount, currency *string
 	err := r.db.QueryRow(ctx, query, key).Scan(
 		&tx.ID,
 		&tx.IdempotencyKey,
@@ -144,6 +158,10 @@ func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key str
 		&tx.CompletedAt,
 		&errorMessage,
 		&tx.Metadata,
+		&amount,
+		&currency,
+		&tx.FromAccountID,
+		&tx.ToAccountID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -157,6 +175,12 @@ func (r *TransactionRepository) GetByIdempotencyKey(ctx context.Context, key str
 	}
 	if errorMessage != nil {
 		tx.ErrorMessage = *errorMessage
+	}
+	if amount != nil {
+		tx.Amount = *amount
+	}
+	if currency != nil {
+		tx.Currency = *currency
 	}
 
 	return tx, nil
@@ -251,11 +275,11 @@ func (r *TransactionRepository) ClaimForProcessing(ctx context.Context, id uuid.
 		UPDATE transactions
 		SET status = $1, processed_at = $2
 		WHERE id = $3 AND status = $4
-		RETURNING id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata
+		RETURNING id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata, amount, currency, from_account_id, to_account_id
 	`
 
 	tx := &model.Transaction{}
-	var reference, errorMessage *string
+	var reference, errorMessage, amount, currency *string
 	err := r.db.QueryRow(ctx, query,
 		model.TransactionStatusProcessing,
 		now,
@@ -272,6 +296,10 @@ func (r *TransactionRepository) ClaimForProcessing(ctx context.Context, id uuid.
 		&tx.CompletedAt,
 		&errorMessage,
 		&tx.Metadata,
+		&amount,
+		&currency,
+		&tx.FromAccountID,
+		&tx.ToAccountID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -286,6 +314,12 @@ func (r *TransactionRepository) ClaimForProcessing(ctx context.Context, id uuid.
 	}
 	if errorMessage != nil {
 		tx.ErrorMessage = *errorMessage
+	}
+	if amount != nil {
+		tx.Amount = *amount
+	}
+	if currency != nil {
+		tx.Currency = *currency
 	}
 
 	return tx, nil

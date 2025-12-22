@@ -13,7 +13,11 @@ const (
 	AccountTypeChecking AccountType = "checking"
 	AccountTypeSavings  AccountType = "savings"
 	AccountTypeLoan     AccountType = "loan"
+	AccountTypeEquity   AccountType = "equity"
 )
+
+// BankEquityAccountNumber is the well-known account number for the bank's equity account
+const BankEquityAccountNumber = "BANK-EQUITY-001"
 
 // AccountStatus represents the current status of an account
 type AccountStatus string
@@ -35,6 +39,12 @@ type Account struct {
 	UpdatedAt     time.Time     `json:"updated_at"`
 }
 
+// IsSystemAccount returns true if this is a system account (e.g., bank equity)
+// System accounts bypass certain validations like insufficient funds checks
+func (a *Account) IsSystemAccount() bool {
+	return a.AccountType == AccountTypeEquity
+}
+
 // CreateAccountRequest is the payload for creating a new account
 type CreateAccountRequest struct {
 	AccountType AccountType `json:"account_type"`
@@ -43,6 +53,11 @@ type CreateAccountRequest struct {
 
 // Validate checks if the create request is valid
 func (r CreateAccountRequest) Validate() error {
+	// Reject system account types - these can only be created internally
+	if r.AccountType == AccountTypeEquity {
+		return ErrSystemAccountType
+	}
+
 	if r.AccountType != AccountTypeChecking &&
 		r.AccountType != AccountTypeSavings &&
 		r.AccountType != AccountTypeLoan {
