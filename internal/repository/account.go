@@ -126,30 +126,57 @@ func (r *AccountRepository) List(ctx context.Context, limit int) ([]model.Accoun
 
 // GetBalance calculates the current balance for an account from ledger entries
 func (r *AccountRepository) GetBalance(ctx context.Context, id uuid.UUID) (*model.AccountBalance, error) {
+	return r.GetBalanceAtTime(ctx, id, nil)
+}
+
+// GetBalanceAtTime calculates the balance for an account at a specific point in time
+// If asOf is nil, returns the current balance
+func (r *AccountRepository) GetBalanceAtTime(ctx context.Context, id uuid.UUID, asOf *time.Time) (*model.AccountBalance, error) {
 	// First check the account exists and get its currency
 	account, err := r.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Sum all ledger entries for this account
-	query := `
-		SELECT COALESCE(SUM(amount), 0) AS balance
-		FROM ledger_entries
-		WHERE account_id = $1
-	`
+	var query string
+	var args []any
+
+	if asOf != nil {
+		// Point-in-time balance query
+		query = `
+			SELECT COALESCE(SUM(amount), 0) AS balance
+			FROM ledger_entries
+			WHERE account_id = $1
+			  AND created_at <= $2
+		`
+		args = []any{id, *asOf}
+	} else {
+		// Current balance query
+		query = `
+			SELECT COALESCE(SUM(amount), 0) AS balance
+			FROM ledger_entries
+			WHERE account_id = $1
+		`
+		args = []any{id}
+	}
 
 	var balance string
-	err = r.db.QueryRow(ctx, query, id).Scan(&balance)
+	err = r.db.QueryRow(ctx, query, args...).Scan(&balance)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get balance: %w", err)
+	}
+
+	// Set AsOf to now if not specified
+	timestamp := time.Now()
+	if asOf != nil {
+		timestamp = *asOf
 	}
 
 	return &model.AccountBalance{
 		AccountID: id,
 		Balance:   balance,
 		Currency:  account.Currency,
-		AsOf:      time.Now(),
+		AsOf:      timestamp,
 	}, nil
 }
 
