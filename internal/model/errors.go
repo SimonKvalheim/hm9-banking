@@ -4,9 +4,10 @@ import "errors"
 
 var (
 	// Account errors
-	ErrAccountNotFound    = errors.New("account not found")
-	ErrInvalidAccountType = errors.New("invalid account type: must be checking, savings, or loan")
-	ErrInvalidCurrency    = errors.New("invalid currency: must be 3-letter ISO code")
+	ErrAccountNotFound      = errors.New("account not found")
+	ErrInvalidAccountType   = errors.New("invalid account type: must be checking, savings, or loan")
+	ErrSystemAccountType    = errors.New("cannot create system account type via API")
+	ErrInvalidCurrency      = errors.New("invalid currency: must be 3-letter ISO code")
 
 	// Transaction errors
 	ErrInsufficientFunds       = errors.New("insufficient funds")
