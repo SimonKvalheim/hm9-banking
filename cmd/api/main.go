@@ -32,9 +32,11 @@ func main() {
 
 	// Initialize repositories
 	accountRepo := repository.NewAccountRepository(db)
+	txRepo := repository.NewTransactionRepository(db)
 
 	// Initialize handlers
 	accountHandler := handler.NewAccountHandler(accountRepo)
+	transferHandler := handler.NewTransferHandler(txRepo, accountRepo)
 
 	// Set up router
 	r := chi.NewRouter()
@@ -49,6 +51,7 @@ func main() {
 	// API routes
 	r.Route("/v1", func(r chi.Router) {
 		accountHandler.RegisterRoutes(r)
+		transferHandler.RegisterRoutes(r)
 	})
 
 	// Start server
