@@ -37,6 +37,11 @@ type Transaction struct {
 	CompletedAt    *time.Time        `json:"completed_at,omitempty"`
 	ErrorMessage   string            `json:"error_message,omitempty"`
 	Metadata       map[string]any    `json:"metadata,omitempty"`
+	// New fields from migration 000002
+	Amount        string     `json:"amount,omitempty"`
+	Currency      string     `json:"currency,omitempty"`
+	FromAccountID *uuid.UUID `json:"from_account_id,omitempty"`
+	ToAccountID   *uuid.UUID `json:"to_account_id,omitempty"`
 }
 
 // TransactionParty represents a participant in a transaction

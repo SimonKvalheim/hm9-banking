@@ -131,10 +131,10 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 		Status:         model.TransactionStatusPending,
 		Reference:      req.Reference,
 		InitiatedAt:    now,
-		Metadata: map[string]any{
-			"amount":   req.Amount,
-			"currency": req.Currency,
-		},
+		Amount:         req.Amount,
+		Currency:       req.Currency,
+		FromAccountID:  &req.FromAccountID,
+		ToAccountID:    &req.ToAccountID,
 	}
 
 	parties := []model.TransactionParty{
@@ -200,35 +200,13 @@ func (h *TransferHandler) GetTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get transaction parties for full detail
-	parties, err := h.txRepo.GetParties(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get transaction details")
-		return
-	}
-
-	// Build response with party information
+	// Build response using the new columns directly
 	detail := model.TransactionDetail{
-		Transaction: *tx,
-	}
-
-	// Extract amount and currency from metadata
-	if tx.Metadata != nil {
-		if amount, ok := tx.Metadata["amount"].(string); ok {
-			detail.Amount = amount
-		}
-		if currency, ok := tx.Metadata["currency"].(string); ok {
-			detail.Currency = currency
-		}
-	}
-
-	// Map party roles to account IDs
-	for _, party := range parties {
-		if party.Role == "source" {
-			detail.FromAccountID = &party.AccountID
-		} else if party.Role == "destination" {
-			detail.ToAccountID = &party.AccountID
-		}
+		Transaction:   *tx,
+		FromAccountID: tx.FromAccountID,
+		ToAccountID:   tx.ToAccountID,
+		Amount:        tx.Amount,
+		Currency:      tx.Currency,
 	}
 
 	writeJSON(w, http.StatusOK, detail)
