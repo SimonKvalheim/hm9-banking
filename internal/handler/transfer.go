@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/simonkvalheim/hm9-banking/internal/model"
+	"github.com/simonkvalheim/hm9-banking/internal/processor"
+	"github.com/simonkvalheim/hm9-banking/internal/queue"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
 
@@ -19,13 +22,19 @@ import (
 type TransferHandler struct {
 	txRepo      *repository.TransactionRepository
 	accountRepo *repository.AccountRepository
+	processor   *processor.TransferProcessor
+	publisher   *queue.Publisher // Optional: if set, uses async processing
 }
 
 // NewTransferHandler creates a new TransferHandler
-func NewTransferHandler(txRepo *repository.TransactionRepository, accountRepo *repository.AccountRepository) *TransferHandler {
+// If publisher is nil, transactions are processed synchronously
+// If publisher is provided, transactions are queued for async processing
+func NewTransferHandler(txRepo *repository.TransactionRepository, accountRepo *repository.AccountRepository, proc *processor.TransferProcessor, publisher *queue.Publisher) *TransferHandler {
 	return &TransferHandler{
 		txRepo:      txRepo,
 		accountRepo: accountRepo,
+		processor:   proc,
+		publisher:   publisher,
 	}
 }
 
@@ -173,10 +182,46 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Return 202 Accepted - transaction created but processing is async
+	// Check if async processing is enabled
+	if h.publisher != nil {
+		// Async mode: publish to queue for worker to process
+		if err := h.publisher.PublishTransaction(r.Context(), createdTx.ID, string(createdTx.Type)); err != nil {
+			log.Printf("Failed to publish transaction %s to queue: %v", createdTx.ID, err)
+			// Transaction created but failed to queue - return pending status
+			// A background job could pick this up later
+		}
+
+		// Return 202 Accepted with pending status
+		writeJSON(w, http.StatusAccepted, model.TransferResponse{
+			TransactionID: createdTx.ID,
+			Status:        model.TransactionStatusPending,
+			CreatedAt:     createdTx.InitiatedAt,
+		})
+		return
+	}
+
+	// Sync mode: process the transaction immediately
+	result, err := h.processor.Process(r.Context(), createdTx.ID)
+	if err != nil {
+		log.Printf("Failed to process transaction %s: %v", createdTx.ID, err)
+		// Transaction created but processing failed - return pending status
+		writeJSON(w, http.StatusAccepted, model.TransferResponse{
+			TransactionID: createdTx.ID,
+			Status:        model.TransactionStatusPending,
+			CreatedAt:     createdTx.InitiatedAt,
+		})
+		return
+	}
+
+	// Fetch updated transaction status after processing
+	finalStatus := model.TransactionStatusCompleted
+	if !result.Success && result.ErrorMessage != "" {
+		finalStatus = model.TransactionStatusFailed
+	}
+
 	writeJSON(w, http.StatusAccepted, model.TransferResponse{
 		TransactionID: createdTx.ID,
-		Status:        createdTx.Status,
+		Status:        finalStatus,
 		CreatedAt:     createdTx.InitiatedAt,
 	})
 }
