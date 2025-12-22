@@ -1,8 +1,198 @@
 # Fjord Bank – Transaction System Design
 
-> **Status:** Draft  
-> **Last Updated:** December 2024  
+> **Status:** In Development
+> **Last Updated:** December 2024
 > **Purpose:** Technical reference for the core transaction processing system
+
+---
+
+## Implementation Status
+
+### What's Complete
+
+| Component | Status | Description |
+|-----------|--------|-------------|
+| **Account Management** | ✅ Done | Create, list, get accounts; balance queries from ledger |
+| **Database Schema** | ✅ Done | All 4 tables: accounts, transactions, ledger_entries, transaction_parties |
+| **Transaction Models** | ✅ Done | Transaction, LedgerEntry, TransactionParty structs with validation |
+| **Transaction Repository** | ✅ Done | CRUD, idempotency lookup, status transitions, claim-for-processing |
+| **Ledger Repository** | ✅ Done | Entry creation, balance queries, transaction balance verification |
+| **Transfer API** | ✅ Done | `POST /v1/transfers` with idempotency, `GET /v1/transactions/{id}` |
+
+### What's Next
+
+| Phase | Component | Description |
+|-------|-----------|-------------|
+| **Phase 5** | Transaction Processor | Core logic: claim transaction, validate balance, create ledger entries, update status |
+| **Phase 4** | Redis Queue (optional) | Async processing via message queue — can be added after sync processing works |
+| **Phase 6** | Balance Fixes | Point-in-time balance queries with `as_of` parameter |
+| **Phase 7** | Testing | Unit and integration tests for all components |
+
+### Current Architecture
+
+```
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│   Client     │─────►│  API Server  │─────►│  PostgreSQL  │
+│   (curl)     │      │  (Go/chi)    │      │              │
+└──────────────┘      └──────────────┘      └──────────────┘
+                             │
+                             ▼
+                      ┌──────────────┐
+                      │  Processor   │  ← Next to implement
+                      │  (sync/async)│
+                      └──────────────┘
+```
+
+---
+
+## Testing the API
+
+### Prerequisites
+
+1. Start the database:
+   ```bash
+   make db-start
+   ```
+
+2. Run migrations (if not already done):
+   ```bash
+   psql $DATABASE_URL -f migrations/000001_create_schema.sql
+   ```
+
+3. Start the API server:
+   ```bash
+   go run ./cmd/api
+   ```
+
+### Test 1: Health Check
+
+Verify the server is running and connected to the database:
+
+```bash
+curl http://localhost:8080/health
+```
+
+**Expected response:**
+```json
+{"status": "healthy", "database": "connected"}
+```
+
+### Test 2: Create Accounts
+
+Create two accounts for testing transfers:
+
+```bash
+# Create source account
+curl -X POST http://localhost:8080/v1/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"account_type": "checking", "currency": "NOK"}'
+
+# Create destination account
+curl -X POST http://localhost:8080/v1/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"account_type": "savings", "currency": "NOK"}'
+```
+
+**Expected:** Both return `201 Created` with account details including `id`.
+
+### Test 3: List Accounts
+
+```bash
+curl http://localhost:8080/v1/accounts
+```
+
+**Expected:** Array of accounts with their IDs (save these for transfer tests).
+
+### Test 4: Create a Transfer
+
+Replace `<FROM_ID>` and `<TO_ID>` with actual account UUIDs from Test 3:
+
+```bash
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: test-transfer-001" \
+  -d '{
+    "from_account_id": "<FROM_ID>",
+    "to_account_id": "<TO_ID>",
+    "amount": "100.00",
+    "currency": "NOK",
+    "reference": "Test transfer"
+  }'
+```
+
+**Expected response (202 Accepted):**
+```json
+{
+  "transaction_id": "uuid",
+  "status": "pending",
+  "created_at": "..."
+}
+```
+
+### Test 5: Idempotency Check
+
+Run the same transfer request again with the same `Idempotency-Key`:
+
+```bash
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: test-transfer-001" \
+  -d '{
+    "from_account_id": "<FROM_ID>",
+    "to_account_id": "<TO_ID>",
+    "amount": "100.00",
+    "currency": "NOK"
+  }'
+```
+
+**Expected:** Same `transaction_id` as Test 4 (idempotent — no duplicate created).
+
+### Test 6: Get Transaction Status
+
+Replace `<TX_ID>` with the transaction ID from Test 4:
+
+```bash
+curl http://localhost:8080/v1/transactions/<TX_ID>
+```
+
+**Expected:** Full transaction details with `status: "pending"` (processing not yet implemented).
+
+### Test 7: Validation Errors
+
+These should all return `400 Bad Request`:
+
+```bash
+# Missing Idempotency-Key header
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -d '{"from_account_id": "...", "to_account_id": "...", "amount": "100", "currency": "NOK"}'
+
+# Same source and destination
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: test-error-001" \
+  -d '{"from_account_id": "<SAME_ID>", "to_account_id": "<SAME_ID>", "amount": "100", "currency": "NOK"}'
+
+# Invalid amount (negative)
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: test-error-002" \
+  -d '{"from_account_id": "<FROM_ID>", "to_account_id": "<TO_ID>", "amount": "-50", "currency": "NOK"}'
+
+# Non-existent account
+curl -X POST http://localhost:8080/v1/transfers \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: test-error-003" \
+  -d '{"from_account_id": "00000000-0000-0000-0000-000000000000", "to_account_id": "<TO_ID>", "amount": "100", "currency": "NOK"}'
+```
+
+### Test 8: Check Account Balance
+
+```bash
+curl http://localhost:8080/v1/accounts/<ACCOUNT_ID>/balance
+```
+
+**Expected:** Balance of `0.00` (transfers are pending, no ledger entries yet).
 
 ---
 
