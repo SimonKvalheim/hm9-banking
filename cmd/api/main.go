@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
+	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
 
@@ -34,9 +35,12 @@ func main() {
 	accountRepo := repository.NewAccountRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
 
+	// Initialize processor
+	transferProcessor := processor.NewTransferProcessor(db)
+
 	// Initialize handlers
 	accountHandler := handler.NewAccountHandler(accountRepo)
-	transferHandler := handler.NewTransferHandler(txRepo, accountRepo)
+	transferHandler := handler.NewTransferHandler(txRepo, accountRepo, transferProcessor)
 
 	// Set up router
 	r := chi.NewRouter()

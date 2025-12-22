@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/simonkvalheim/hm9-banking/internal/model"
+	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
 
@@ -19,13 +21,15 @@ import (
 type TransferHandler struct {
 	txRepo      *repository.TransactionRepository
 	accountRepo *repository.AccountRepository
+	processor   *processor.TransferProcessor
 }
 
 // NewTransferHandler creates a new TransferHandler
-func NewTransferHandler(txRepo *repository.TransactionRepository, accountRepo *repository.AccountRepository) *TransferHandler {
+func NewTransferHandler(txRepo *repository.TransactionRepository, accountRepo *repository.AccountRepository, proc *processor.TransferProcessor) *TransferHandler {
 	return &TransferHandler{
 		txRepo:      txRepo,
 		accountRepo: accountRepo,
+		processor:   proc,
 	}
 }
 
@@ -173,10 +177,29 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Return 202 Accepted - transaction created but processing is async
+	// Process the transaction synchronously
+	// In production, this would be done via a message queue for async processing
+	result, err := h.processor.Process(r.Context(), createdTx.ID)
+	if err != nil {
+		log.Printf("Failed to process transaction %s: %v", createdTx.ID, err)
+		// Transaction created but processing failed - return pending status
+		writeJSON(w, http.StatusAccepted, model.TransferResponse{
+			TransactionID: createdTx.ID,
+			Status:        model.TransactionStatusPending,
+			CreatedAt:     createdTx.InitiatedAt,
+		})
+		return
+	}
+
+	// Fetch updated transaction status after processing
+	finalStatus := model.TransactionStatusCompleted
+	if !result.Success && result.ErrorMessage != "" {
+		finalStatus = model.TransactionStatusFailed
+	}
+
 	writeJSON(w, http.StatusAccepted, model.TransferResponse{
 		TransactionID: createdTx.ID,
-		Status:        createdTx.Status,
+		Status:        finalStatus,
 		CreatedAt:     createdTx.InitiatedAt,
 	})
 }
