@@ -84,6 +84,34 @@ func (r *AccountRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.A
 	return account, nil
 }
 
+// GetByAccountNumber retrieves an account by its account number
+func (r *AccountRepository) GetByAccountNumber(ctx context.Context, accountNumber string) (*model.Account, error) {
+	query := `
+		SELECT id, account_number, account_type, currency, status, created_at, updated_at
+		FROM accounts
+		WHERE account_number = $1
+	`
+
+	account := &model.Account{}
+	err := r.db.QueryRow(ctx, query, accountNumber).Scan(
+		&account.ID,
+		&account.AccountNumber,
+		&account.AccountType,
+		&account.Currency,
+		&account.Status,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, model.ErrAccountNotFound
+		}
+		return nil, fmt.Errorf("failed to get account by account number: %w", err)
+	}
+
+	return account, nil
+}
+
 // List retrieves all accounts (with a limit for safety)
 func (r *AccountRepository) List(ctx context.Context, limit int) ([]model.Account, error) {
 	if limit <= 0 || limit > 100 {

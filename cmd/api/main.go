@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/simonkvalheim/hm9-banking/internal/bootstrap"
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
@@ -29,6 +30,12 @@ func main() {
 	}
 	defer db.Close()
 	log.Println("Connected to database")
+
+	// Bootstrap system accounts (e.g., bank equity account)
+	ctx := context.Background()
+	if err := bootstrap.Initialize(ctx, db); err != nil {
+		log.Fatalf("Failed to bootstrap system: %v", err)
+	}
 
 	// Initialize repositories
 	accountRepo := repository.NewAccountRepository(db)
