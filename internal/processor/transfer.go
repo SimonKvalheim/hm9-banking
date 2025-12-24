@@ -75,8 +75,8 @@ func (p *TransferProcessor) Process(ctx context.Context, transactionID uuid.UUID
 	}
 
 	// Step 3: Extract amount from metadata
-	amount, ok := tx.Metadata["amount"].(string)
-	if !ok || amount == "" {
+	amount := tx.Amount
+	if amount == "" {
 		if err := p.failTransaction(ctx, dbTx, transactionID, "invalid amount in transaction"); err != nil {
 			return nil, err
 		}
@@ -130,11 +130,11 @@ func (p *TransferProcessor) claimTransaction(ctx context.Context, dbTx pgx.Tx, i
 		UPDATE transactions
 		SET status = $1, processed_at = $2
 		WHERE id = $3 AND status = $4
-		RETURNING id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata
+		RETURNING id, idempotency_key, type, status, reference, initiated_at, processed_at, completed_at, error_message, metadata, amount, currency, from_account_id, to_account_id
 	`
 
 	tx := &model.Transaction{}
-	var reference, errorMessage *string
+	var reference, errorMessage, amount, currency *string
 	err := dbTx.QueryRow(ctx, query,
 		model.TransactionStatusProcessing,
 		now,
@@ -151,10 +151,14 @@ func (p *TransferProcessor) claimTransaction(ctx context.Context, dbTx pgx.Tx, i
 		&tx.CompletedAt,
 		&errorMessage,
 		&tx.Metadata,
+		&amount,
+		&currency,
+		&tx.FromAccountID,
+		&tx.ToAccountID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return nil, nil // Not in pending state
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -164,6 +168,12 @@ func (p *TransferProcessor) claimTransaction(ctx context.Context, dbTx pgx.Tx, i
 	}
 	if errorMessage != nil {
 		tx.ErrorMessage = *errorMessage
+	}
+	if amount != nil {
+		tx.Amount = *amount
+	}
+	if currency != nil {
+		tx.Currency = *currency
 	}
 
 	return tx, nil
