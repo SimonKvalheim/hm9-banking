@@ -13,8 +13,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
+	"github.com/simonkvalheim/hm9-banking/internal/processor"
+	"github.com/simonkvalheim/hm9-banking/internal/queue"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
 
@@ -30,11 +33,45 @@ func main() {
 	defer db.Close()
 	log.Println("Connected to database")
 
+	// Defer Redis cleanup (will be set if async mode enabled)
+	var redisCleanup func()
+	defer func() {
+		if redisCleanup != nil {
+			redisCleanup()
+		}
+	}()
+
 	// Initialize repositories
 	accountRepo := repository.NewAccountRepository(db)
+	txRepo := repository.NewTransactionRepository(db)
+
+	// Initialize processor
+	transferProcessor := processor.NewTransferProcessor(db)
+
+	// Initialize queue publisher if async mode is enabled
+	var publisher *queue.Publisher
+	if cfg.AsyncMode {
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:     cfg.RedisURL,
+			Password: cfg.RedisPassword,
+			DB:       0,
+		})
+		redisCleanup = func() { redisClient.Close() }
+
+		// Test Redis connection
+		ctx := context.Background()
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			log.Fatalf("Failed to connect to Redis: %v", err)
+		}
+		log.Println("Connected to Redis (async mode enabled)")
+		publisher = queue.NewPublisher(redisClient)
+	} else {
+		log.Println("Running in sync mode (set ASYNC_MODE=true for async processing)")
+	}
 
 	// Initialize handlers
 	accountHandler := handler.NewAccountHandler(accountRepo)
+	transferHandler := handler.NewTransferHandler(txRepo, accountRepo, transferProcessor, publisher)
 
 	// Set up router
 	r := chi.NewRouter()
@@ -49,6 +86,7 @@ func main() {
 	// API routes
 	r.Route("/v1", func(r chi.Router) {
 		accountHandler.RegisterRoutes(r)
+		transferHandler.RegisterRoutes(r)
 	})
 
 	// Start server
@@ -85,8 +123,11 @@ func main() {
 
 // Config holds all configuration for the application
 type Config struct {
-	Port        string
-	DatabaseURL string
+	Port          string
+	DatabaseURL   string
+	RedisURL      string
+	RedisPassword string
+	AsyncMode     bool // If true, use Redis queue for async processing
 }
 
 // loadConfig reads configuration from environment variables
@@ -102,9 +143,22 @@ func loadConfig() Config {
 		dbURL = "postgres://fjord:fjordpass@localhost:5432/fjorddb?sslmode=disable"
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	// Enable async mode if ASYNC_MODE=true
+	asyncMode := os.Getenv("ASYNC_MODE") == "true"
+
 	return Config{
-		Port:        port,
-		DatabaseURL: dbURL,
+		Port:          port,
+		DatabaseURL:   dbURL,
+		RedisURL:      redisURL,
+		RedisPassword: redisPassword,
+		AsyncMode:     asyncMode,
 	}
 }
 

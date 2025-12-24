@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -93,6 +94,7 @@ func (h *AccountHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetBalance handles GET /accounts/{id}/balance
+// Optional query parameter: as_of (ISO 8601 timestamp) for point-in-time balance
 func (h *AccountHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idParam)
@@ -101,7 +103,19 @@ func (h *AccountHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	balance, err := h.repo.GetBalance(r.Context(), id)
+	// Parse optional as_of query parameter
+	var asOf *time.Time
+	asOfParam := r.URL.Query().Get("as_of")
+	if asOfParam != "" {
+		parsed, err := time.Parse(time.RFC3339, asOfParam)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid as_of format: use ISO 8601 (e.g., 2024-12-13T10:00:00Z)")
+			return
+		}
+		asOf = &parsed
+	}
+
+	balance, err := h.repo.GetBalanceAtTime(r.Context(), id, asOf)
 	if err != nil {
 		if errors.Is(err, model.ErrAccountNotFound) {
 			writeError(w, http.StatusNotFound, "Account not found")
