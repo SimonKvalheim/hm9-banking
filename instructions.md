@@ -1,7 +1,7 @@
 # Fjord Bank – Transaction System Design
 
 > **Status:** In Development
-> **Last Updated:** December 2024
+> **Last Updated:** December 2025
 > **Purpose:** Technical reference for the core transaction processing system
 
 ---

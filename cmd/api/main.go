@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/simonkvalheim/hm9-banking/internal/bootstrap"
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
 	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/queue"
