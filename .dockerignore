@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+instructions.md
+fjord_bank_auth_guide.md
+LOCAL_DEV.md
+
+# Build artifacts
+api
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+
+# Frontend
+frontend/node_modules
+frontend/build
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+.claude
+
+# OS
+.DS_Store
+Thumbs.db

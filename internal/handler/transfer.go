@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/simonkvalheim/hm9-banking/internal/middleware"
 	"github.com/simonkvalheim/hm9-banking/internal/model"
 	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/queue"
@@ -46,7 +47,14 @@ func (h *TransferHandler) RegisterRoutes(r chi.Router) {
 
 // CreateTransfer handles POST /transfers
 // Idempotency-Key header is required for safe retries
+// Verifies source account belongs to authenticated customer
 func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request) {
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
 	// Extract idempotency key from header
 	idempotencyKey := r.Header.Get("Idempotency-Key")
 	if idempotencyKey == "" {
@@ -101,6 +109,12 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 	}
 	if fromAccount.Status != model.AccountStatusActive {
 		writeError(w, http.StatusBadRequest, "Source account is not active")
+		return
+	}
+
+	// Authorization: can only transfer FROM your own accounts
+	if fromAccount.CustomerID == nil || *fromAccount.CustomerID != customerID {
+		writeError(w, http.StatusForbidden, "You can only transfer from your own accounts")
 		return
 	}
 
@@ -227,7 +241,14 @@ func (h *TransferHandler) CreateTransfer(w http.ResponseWriter, r *http.Request)
 }
 
 // GetTransaction handles GET /transactions/{id}
+// Verifies transaction involves customer's accounts
 func (h *TransferHandler) GetTransaction(w http.ResponseWriter, r *http.Request) {
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
 	idParam := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idParam)
 	if err != nil {
@@ -242,6 +263,26 @@ func (h *TransferHandler) GetTransaction(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "Failed to get transaction")
+		return
+	}
+
+	// Authorization: transaction must involve at least one of the customer's accounts
+	authorized := false
+	if tx.FromAccountID != nil {
+		fromAccount, err := h.accountRepo.GetByID(r.Context(), *tx.FromAccountID)
+		if err == nil && fromAccount.CustomerID != nil && *fromAccount.CustomerID == customerID {
+			authorized = true
+		}
+	}
+	if !authorized && tx.ToAccountID != nil {
+		toAccount, err := h.accountRepo.GetByID(r.Context(), *tx.ToAccountID)
+		if err == nil && toAccount.CustomerID != nil && *toAccount.CustomerID == customerID {
+			authorized = true
+		}
+	}
+
+	if !authorized {
+		writeError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 

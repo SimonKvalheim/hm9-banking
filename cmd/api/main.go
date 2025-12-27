@@ -17,6 +17,7 @@ import (
 
 	"github.com/simonkvalheim/hm9-banking/internal/auth"
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
+	appMiddleware "github.com/simonkvalheim/hm9-banking/internal/middleware"
 	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/queue"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
@@ -80,12 +81,16 @@ func main() {
 	transferHandler := handler.NewTransferHandler(txRepo, accountRepo, transferProcessor, publisher)
 	authHandler := handler.NewAuthHandler(authService)
 
+	// Initialize auth middleware
+	authMiddleware := appMiddleware.NewAuthMiddleware(authService)
+
 	// Set up router
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.Logger)    // Logs each request
-	r.Use(middleware.Recoverer) // Recovers from panics gracefully
+	r.Use(appMiddleware.CORS(appMiddleware.DefaultCORSConfig())) // CORS for frontend
+	r.Use(middleware.Logger)                                     // Logs each request
+	r.Use(middleware.Recoverer)                                  // Recovers from panics gracefully
 
 	// Health check (no auth needed)
 	r.Get("/health", healthHandler(db))
@@ -93,8 +98,11 @@ func main() {
 	// Auth routes (public - no auth required)
 	authHandler.RegisterRoutes(r)
 
-	// API routes (will add auth middleware in Phase 3)
+	// Protected API routes (require authentication)
 	r.Route("/v1", func(r chi.Router) {
+		// Apply auth middleware to all /v1 routes
+		r.Use(authMiddleware.RequireAuth)
+
 		accountHandler.RegisterRoutes(r)
 		transferHandler.RegisterRoutes(r)
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/simonkvalheim/hm9-banking/internal/middleware"
 	"github.com/simonkvalheim/hm9-banking/internal/model"
 	"github.com/simonkvalheim/hm9-banking/internal/repository"
 )
@@ -34,7 +35,14 @@ func (h *AccountHandler) RegisterRoutes(r chi.Router) {
 }
 
 // Create handles POST /accounts
+// Associates new account with authenticated customer
 func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
 	var req model.CreateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
@@ -46,7 +54,8 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.repo.Create(r.Context(), req)
+	// Create account linked to this customer
+	account, err := h.repo.CreateForCustomer(r.Context(), req, customerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create account")
 		return
@@ -56,8 +65,16 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // List handles GET /accounts
+// Returns only accounts belonging to the authenticated customer
 func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.repo.List(r.Context(), 100)
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	// Only get accounts for this customer
+	accounts, err := h.repo.GetByCustomerID(r.Context(), customerID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to list accounts")
 		return
@@ -72,7 +89,14 @@ func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetByID handles GET /accounts/{id}
+// Verifies the account belongs to the authenticated customer
 func (h *AccountHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
 	idParam := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idParam)
 	if err != nil {
@@ -90,16 +114,46 @@ func (h *AccountHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authorization check: account must belong to authenticated customer
+	if account.CustomerID == nil || *account.CustomerID != customerID {
+		writeError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
 	writeJSON(w, http.StatusOK, account)
 }
 
 // GetBalance handles GET /accounts/{id}/balance
 // Optional query parameter: as_of (ISO 8601 timestamp) for point-in-time balance
+// Verifies the account belongs to the authenticated customer
 func (h *AccountHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
+	customerID := middleware.GetCustomerID(r.Context())
+	if customerID == uuid.Nil {
+		writeError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
 	idParam := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idParam)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid account ID format")
+		return
+	}
+
+	// Verify account belongs to customer before getting balance
+	account, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, model.ErrAccountNotFound) {
+			writeError(w, http.StatusNotFound, "Account not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to get account")
+		return
+	}
+
+	// Authorization check
+	if account.CustomerID == nil || *account.CustomerID != customerID {
+		writeError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 

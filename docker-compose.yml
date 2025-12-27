@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: fjord-pg
+    environment:
+      POSTGRES_USER: fjord
+      POSTGRES_PASSWORD: fjordpass
+      POSTGRES_DB: fjorddb
+    ports:
+      - "5432:5432"
+    volumes:
+      - fjord-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fjord"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (optional - for async mode)
+  redis:
+    image: redis:7
+    container_name: fjord-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - fjord-redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: fjord-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8080
+      CHOKIDAR_USEPOLLING: "true"  # Enable hot reload in Docker
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent overwriting node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  fjord-pg-data:
+  fjord-redis-data:

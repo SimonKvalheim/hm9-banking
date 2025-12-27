@@ -14,21 +14,44 @@ REDIS_VOLUME ?= fjord-redis-data
 REDIS_PORT ?= 6379
 REDIS_IMAGE ?= redis:7
 
+FRONTEND_CONTAINER ?= fjord-frontend
+FRONTEND_PORT ?= 3000
+
+API_CONTAINER ?= fjord-api
+API_PORT ?= 8080
+
 .PHONY: help create create-db create-redis start start-db start-redis stop stop-db stop-redis delete delete-db delete-redis logs logs-db logs-redis status psql redis-cli
+.PHONY: dev dev-up dev-down dev-logs dev-build frontend-init frontend-shell api worker migrate test
 
 help:
-	@printf "Makefile - Dev Docker helpers\n"
-	@printf "\nTargets:\n"
+	@printf "Makefile - Fjord Bank Development Commands\n"
+	@printf "\n=== Quick Start ===\n"
+	@printf "  dev           - Start frontend + DB + Redis (infrastructure only)\n"
+	@printf "  api           - Run Go API server locally (use this after 'make dev')\n"
+	@printf "  worker        - Run Go background worker locally (optional, for async mode)\n"
+	@printf "\n=== Docker Compose (Frontend + Infrastructure) ===\n"
+	@printf "  dev-up        - Start frontend, DB, and Redis containers\n"
+	@printf "  dev-down      - Stop and remove all containers\n"
+	@printf "  dev-build     - Rebuild frontend container\n"
+	@printf "  dev-logs      - Tail logs from all services\n"
+	@printf "  dev-logs-fe   - Tail logs from frontend only\n"
+	@printf "\n=== Individual Services ===\n"
 	@printf "  create        - Create both Postgres and Redis containers\n"
 	@printf "  create-db     - Create Postgres container\n"
 	@printf "  create-redis  - Create Redis container\n"
-	@printf "  start         - Start both services\n"
-	@printf "  stop          - Stop both services\n"
+	@printf "  start         - Start both DB services\n"
+	@printf "  stop          - Stop both DB services\n"
 	@printf "  delete        - Remove both containers and their volumes\n"
-	@printf "  status        - List the containers\n"
-	@printf "  logs          - Tail logs for both containers\n"
+	@printf "  status        - List all Fjord Bank containers\n"
+	@printf "\n=== Database & Utilities ===\n"
 	@printf "  psql          - Open psql inside the Postgres container\n"
 	@printf "  redis-cli     - Open redis-cli inside the Redis container\n"
+	@printf "  migrate       - Run database migrations\n"
+	@printf "\n=== Development Helpers ===\n"
+	@printf "  frontend-init - Initialize React app (first time setup)\n"
+	@printf "  frontend-shell- Open shell in frontend container\n"
+	@printf "  api-shell     - Open shell in API container\n"
+	@printf "  test          - Run all tests\n"
 
 #######################
 # Create / Start / Stop
@@ -128,10 +151,82 @@ logs-redis:
 	@docker logs -f $(REDIS_CONTAINER) || true
 
 status:
-	@docker ps -a --filter "name=$(PG_CONTAINER)" --filter "name=$(REDIS_CONTAINER)"
+	@docker ps -a --filter "name=fjord-"
 
 psql:
 	@docker exec -it $(PG_CONTAINER) psql -U $(PG_USER) -d $(PG_DB)
 
 redis-cli:
 	@docker exec -it $(REDIS_CONTAINER) redis-cli
+
+#######################
+# Docker Compose Commands
+#######################
+
+dev: dev-up
+
+dev-up:
+	@echo "Starting infrastructure with docker-compose..."
+	@docker-compose up -d
+	@echo ""
+	@echo "✅ Infrastructure started!"
+	@echo "   Frontend:  http://localhost:3000 (starting...)"
+	@echo "   Postgres:  localhost:5432"
+	@echo "   Redis:     localhost:6379"
+	@echo ""
+	@echo "⚡ Next steps: Start your Go services"
+	@echo "   Terminal 2: make api     (required)"
+	@echo "   Terminal 3: make worker  (optional, for async mode)"
+	@echo ""
+	@echo "📋 View logs: make dev-logs"
+
+dev-down:
+	@echo "Stopping all services..."
+	@docker-compose down
+	@echo "Services stopped"
+
+dev-build:
+	@echo "Rebuilding all containers..."
+	@docker-compose build
+	@echo "Build complete"
+
+dev-logs:
+	@docker-compose logs -f
+
+dev-logs-fe:
+	@docker-compose logs -f frontend
+
+#######################
+# Development Helpers
+#######################
+
+frontend-init:
+	@echo "Initializing React app with TypeScript..."
+	@cd frontend && npx create-react-app . --template typescript
+	@echo "Installing additional dependencies..."
+	@cd frontend && npm install react-router-dom @types/react-router-dom
+	@echo "Frontend initialized!"
+
+frontend-shell:
+	@docker exec -it $(FRONTEND_CONTAINER) /bin/sh
+
+api:
+	@echo "Starting Go API server..."
+	@echo "Press Ctrl+C to stop"
+	@go run ./cmd/api
+
+worker:
+	@echo "Starting Go background worker..."
+	@echo "Processes async transactions from Redis queue"
+	@echo "Press Ctrl+C to stop"
+	@go run ./cmd/worker
+
+migrate:
+	@echo "Running database migrations..."
+	@goose -dir migrations postgres "postgres://$(PG_USER):$(PG_PASSWORD)@localhost:5432/$(PG_DB)?sslmode=disable" up
+	@echo "Migrations complete"
+
+test:
+	@echo "Running tests..."
+	@go test ./... -v
+	@echo "Tests complete"
