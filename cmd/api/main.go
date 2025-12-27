@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/simonkvalheim/hm9-banking/internal/auth"
 	"github.com/simonkvalheim/hm9-banking/internal/handler"
 	"github.com/simonkvalheim/hm9-banking/internal/processor"
 	"github.com/simonkvalheim/hm9-banking/internal/queue"
@@ -44,6 +45,11 @@ func main() {
 	// Initialize repositories
 	accountRepo := repository.NewAccountRepository(db)
 	txRepo := repository.NewTransactionRepository(db)
+	customerRepo := repository.NewCustomerRepository(db)
+
+	// Initialize auth service
+	authConfig := auth.DefaultConfig(cfg.JWTSecret)
+	authService := auth.NewService(authConfig, customerRepo)
 
 	// Initialize processor
 	transferProcessor := processor.NewTransferProcessor(db)
@@ -72,6 +78,7 @@ func main() {
 	// Initialize handlers
 	accountHandler := handler.NewAccountHandler(accountRepo)
 	transferHandler := handler.NewTransferHandler(txRepo, accountRepo, transferProcessor, publisher)
+	authHandler := handler.NewAuthHandler(authService)
 
 	// Set up router
 	r := chi.NewRouter()
@@ -83,7 +90,10 @@ func main() {
 	// Health check (no auth needed)
 	r.Get("/health", healthHandler(db))
 
-	// API routes
+	// Auth routes (public - no auth required)
+	authHandler.RegisterRoutes(r)
+
+	// API routes (will add auth middleware in Phase 3)
 	r.Route("/v1", func(r chi.Router) {
 		accountHandler.RegisterRoutes(r)
 		transferHandler.RegisterRoutes(r)
@@ -127,7 +137,8 @@ type Config struct {
 	DatabaseURL   string
 	RedisURL      string
 	RedisPassword string
-	AsyncMode     bool // If true, use Redis queue for async processing
+	AsyncMode     bool   // If true, use Redis queue for async processing
+	JWTSecret     string // Secret for signing JWT tokens
 }
 
 // loadConfig reads configuration from environment variables
@@ -153,12 +164,21 @@ func loadConfig() Config {
 	// Enable async mode if ASYNC_MODE=true
 	asyncMode := os.Getenv("ASYNC_MODE") == "true"
 
+	// JWT secret for token signing
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		// Default for local development - CHANGE IN PRODUCTION!
+		jwtSecret = "dev-secret-change-in-production-use-openssl-rand-base64-32"
+		log.Println("WARNING: Using default JWT_SECRET for development. Set JWT_SECRET environment variable in production!")
+	}
+
 	return Config{
 		Port:          port,
 		DatabaseURL:   dbURL,
 		RedisURL:      redisURL,
 		RedisPassword: redisPassword,
 		AsyncMode:     asyncMode,
+		JWTSecret:     jwtSecret,
 	}
 }
 

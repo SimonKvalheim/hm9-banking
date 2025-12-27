@@ -36,8 +36,8 @@ func (r *AccountRepository) Create(ctx context.Context, req model.CreateAccountR
 	}
 
 	query := `
-		INSERT INTO accounts (id, account_number, account_type, currency, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO accounts (id, account_number, account_type, currency, status, customer_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, err := r.db.Exec(ctx, query,
@@ -46,6 +46,7 @@ func (r *AccountRepository) Create(ctx context.Context, req model.CreateAccountR
 		account.AccountType,
 		account.Currency,
 		account.Status,
+		account.CustomerID,
 		account.CreatedAt,
 		account.UpdatedAt,
 	)
@@ -56,10 +57,45 @@ func (r *AccountRepository) Create(ctx context.Context, req model.CreateAccountR
 	return account, nil
 }
 
+// CreateForCustomer inserts a new account linked to a customer
+func (r *AccountRepository) CreateForCustomer(ctx context.Context, req model.CreateAccountRequest, customerID uuid.UUID) (*model.Account, error) {
+	account := &model.Account{
+		ID:            uuid.New(),
+		AccountNumber: generateAccountNumber(),
+		AccountType:   req.AccountType,
+		Currency:      req.Currency,
+		Status:        model.AccountStatusActive,
+		CustomerID:    &customerID,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	query := `
+		INSERT INTO accounts (id, account_number, account_type, currency, status, customer_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		account.ID,
+		account.AccountNumber,
+		account.AccountType,
+		account.Currency,
+		account.Status,
+		account.CustomerID,
+		account.CreatedAt,
+		account.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create account for customer: %w", err)
+	}
+
+	return account, nil
+}
+
 // GetByID retrieves an account by its ID
 func (r *AccountRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Account, error) {
 	query := `
-		SELECT id, account_number, account_type, currency, status, created_at, updated_at
+		SELECT id, account_number, account_type, currency, status, customer_id, created_at, updated_at
 		FROM accounts
 		WHERE id = $1
 	`
@@ -71,6 +107,7 @@ func (r *AccountRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.A
 		&account.AccountType,
 		&account.Currency,
 		&account.Status,
+		&account.CustomerID,
 		&account.CreatedAt,
 		&account.UpdatedAt,
 	)
@@ -87,7 +124,7 @@ func (r *AccountRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.A
 // GetByAccountNumber retrieves an account by its account number
 func (r *AccountRepository) GetByAccountNumber(ctx context.Context, accountNumber string) (*model.Account, error) {
 	query := `
-		SELECT id, account_number, account_type, currency, status, created_at, updated_at
+		SELECT id, account_number, account_type, currency, status, customer_id, created_at, updated_at
 		FROM accounts
 		WHERE account_number = $1
 	`
@@ -99,6 +136,7 @@ func (r *AccountRepository) GetByAccountNumber(ctx context.Context, accountNumbe
 		&account.AccountType,
 		&account.Currency,
 		&account.Status,
+		&account.CustomerID,
 		&account.CreatedAt,
 		&account.UpdatedAt,
 	)
@@ -119,7 +157,7 @@ func (r *AccountRepository) List(ctx context.Context, limit int) ([]model.Accoun
 	}
 
 	query := `
-		SELECT id, account_number, account_type, currency, status, created_at, updated_at
+		SELECT id, account_number, account_type, currency, status, customer_id, created_at, updated_at
 		FROM accounts
 		ORDER BY created_at DESC
 		LIMIT $1
@@ -140,6 +178,44 @@ func (r *AccountRepository) List(ctx context.Context, limit int) ([]model.Accoun
 			&account.AccountType,
 			&account.Currency,
 			&account.Status,
+			&account.CustomerID,
+			&account.CreatedAt,
+			&account.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+		accounts = append(accounts, account)
+	}
+
+	return accounts, nil
+}
+
+// GetByCustomerID retrieves all accounts belonging to a customer
+func (r *AccountRepository) GetByCustomerID(ctx context.Context, customerID uuid.UUID) ([]model.Account, error) {
+	query := `
+		SELECT id, account_number, account_type, currency, status, customer_id, created_at, updated_at
+		FROM accounts
+		WHERE customer_id = $1
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query, customerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get accounts by customer: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []model.Account
+	for rows.Next() {
+		var account model.Account
+		err := rows.Scan(
+			&account.ID,
+			&account.AccountNumber,
+			&account.AccountType,
+			&account.Currency,
+			&account.Status,
+			&account.CustomerID,
 			&account.CreatedAt,
 			&account.UpdatedAt,
 		)

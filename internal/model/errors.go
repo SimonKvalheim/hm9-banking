@@ -20,4 +20,17 @@ var (
 	ErrInvalidAmount           = errors.New("invalid amount")
 	ErrCurrencyMismatch        = errors.New("currency mismatch between accounts")
 	ErrAccountNotActive        = errors.New("account is not active")
+
+	// Customer/Auth errors
+	ErrInvalidEmail       = errors.New("invalid email address")
+	ErrPasswordTooShort   = errors.New("password must be at least 8 characters")
+	ErrPasswordTooWeak    = errors.New("password must contain uppercase, lowercase, and digit")
+	ErrPasswordRequired   = errors.New("password is required")
+	ErrFirstNameRequired  = errors.New("first name is required")
+	ErrLastNameRequired   = errors.New("last name is required")
+	ErrCustomerNotFound   = errors.New("customer not found")
+	ErrEmailAlreadyExists = errors.New("email already registered")
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrAccountLocked      = errors.New("account is locked")
+	ErrAccountSuspended   = errors.New("account is suspended")
 )

@@ -35,6 +35,7 @@ type Account struct {
 	AccountType   AccountType   `json:"account_type"`
 	Currency      string        `json:"currency"`
 	Status        AccountStatus `json:"status"`
+	CustomerID    *uuid.UUID    `json:"customer_id,omitempty"`
 	CreatedAt     time.Time     `json:"created_at"`
 	UpdatedAt     time.Time     `json:"updated_at"`
 }
